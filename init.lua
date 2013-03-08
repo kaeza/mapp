@@ -1,8 +1,22 @@
+
+local ENABLE_THREADS = true
+local threads = { }
+local threads_to_remove = { }
+
 minetest.register_tool("mapp:map", {
 	description = "map",
 	inventory_image = "map_block.png",
 	on_use = function(itemstack, user, pointed_thing)
-	map_handler(itemstack,user,pointed_thing)
+        if (ENABLE_THREADS) then
+            local name = user:get_player_name()
+            if threads[name] then return end
+            minetest.chat_send_player(name, "Loading map...");
+            threads[name] = coroutine.create(function ( )
+                map_handler(itemstack,user,pointed_thing)
+            end)
+        else
+            map_handler(itemstack,user,pointed_thing)
+        end
 	end,
 })
 function map_handler (itemstack, user, pointed_thing)
@@ -80,6 +94,10 @@ function map_handler (itemstack, user, pointed_thing)
 				mapar[i+17][j+17].y = k
 				mapar[i+17][j+17].im = tile
 			end
+            if ENABLE_THREADS then
+                --print("Yielding from "..player_name)
+                coroutine.yield()
+            end
 		end
 
 	--Optimisation technique.
@@ -99,6 +117,10 @@ function map_handler (itemstack, user, pointed_thing)
 			pp = pp + 1
 			p[pp] = "image[".. 0.15*(i) ..",".. 0.15*(32-j)+0.1 ..";0.2,0.2;" .. mapar[i][j].im .. "]"
 		end
+        if ENABLE_THREADS then
+            --print("Yielding from "..player_name)
+            coroutine.yield()
+        end
 	end
 
 	pp = pp + 1
@@ -112,4 +134,21 @@ function map_handler (itemstack, user, pointed_thing)
 
 	minetest.show_formspec(player_name, "mapp:map", map)
 	print("[Mapp] Map generated in: ".. clock() - start.." seconds.")
+	if ENABLE_THREADS then
+	    minetest.chat_send_player(player_name, "Map loaded!");
+	    threads_to_remove[#threads_to_remove + 1] = player_name
+	end
+end
+
+if ENABLE_THREADS then
+    minetest.register_globalstep(function ( dtime )
+        for name, thread in pairs(threads) do
+            --print("Resuming "..name)
+            coroutine.resume(thread)
+        end
+        for _,name in ipairs(threads_to_remove) do
+            threads[name] = nil
+        end
+        threads_to_remove = { }
+    end)
 end
